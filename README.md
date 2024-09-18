@@ -37,7 +37,7 @@ docker container prune -f
 ## Run the custom model
 1. Create an account and obtain an Upshot ApiKey [here](https://developer.upshot.xyz)
 2. create an account and optain [here](https://www.coingecko.com/en/developers/dashboard)
-3. 
+3. create an account and optain [here](https://www.cryptocompare.com/cryptopian/api-keys)
 4. Clone the git repository
 ```
 git clone https://github.com/Onixs50/allora-worker.git
