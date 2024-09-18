@@ -27,74 +27,117 @@ type Kline struct {
 	Closed    bool
 }
 
-func main() {
+type envConfig struct {
+	APIKey              string
+	RPC                 string
+	CoinGeckoAPIKey     string
+	CryptoCompareAPIKey string
+}
 
+func main() {
 	cfg := &envConfig{
-		APIKey: os.Getenv("UPSHOT_APIKEY"),
-		RPC:    os.Getenv("RPC"),
+		APIKey:              os.Getenv("UPSHOT_APIKEY"),
+		RPC:                 os.Getenv("RPC"),
+		CoinGeckoAPIKey:     os.Getenv("COINGECKO_APIKEY"),
+		CryptoCompareAPIKey: os.Getenv("CRYPTOCOMPARE_APIKEY"),
 	}
 
 	fmt.Println("UPSHOT_APIKEY: ", cfg.APIKey)
 	fmt.Println("RPC: ", cfg.RPC)
+	fmt.Println("COINGECKO_APIKEY: ", cfg.CoinGeckoAPIKey)
+	fmt.Println("CRYPTOCOMPARE_APIKEY: ", cfg.CryptoCompareAPIKey)
 
 	router := gin.Default()
 
 	router.GET("/inference/:token", func(c *gin.Context) {
 		token := c.Param("token")
-		if token == "MEME" {
+		switch token {
+		case "MEME":
 			handleMemeRequest(c, cfg)
-			return
+		case "DeFi":
+			handleDeFiRequest(c, cfg)
+		case "NFT":
+			handleNFTRequest(c, cfg)
+		default:
+			handleCryptoRequest(c, cfg, token)
 		}
-
-		symbol := fmt.Sprintf("%sUSDT", token)
-
-		k, err := getLastKlines(symbol, "15m")
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-
-		rate, err := calculatePriceChangeRate(*k)
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-		rate = multiplyChangeRate(rate)
-		close, _ := strconv.ParseFloat(k.Close, 64)
-		price := close + (close * rate)
-
-		c.String(200, strconv.FormatFloat(price, 'g', -1, 64))
 	})
 
 	router.Run(":8000")
+}
 
+func handleCryptoRequest(c *gin.Context, cfg *envConfig, token string) {
+	symbol := fmt.Sprintf("%sUSDT", token)
+
+	k, err := getLastKlines(symbol, "15m")
+	if err != nil {
+		fmt.Println(err)
+		c.String(500, "Error fetching klines")
+		return
+	}
+
+	rate, err := calculatePriceChangeRate(*k)
+	if err != nil {
+		fmt.Println(err)
+		c.String(500, "Error calculating price change rate")
+		return
+	}
+	rate = multiplyChangeRate(rate)
+	close, _ := strconv.ParseFloat(k.Close, 64)
+	price := close + (close * rate)
+
+	// Get additional data from CoinGecko
+	cgPrice, err := getCoinGeckoPrice(token, cfg.CoinGeckoAPIKey)
+	if err != nil {
+		fmt.Println("CoinGecko API error:", err)
+	}
+
+	// Get additional data from CryptoCompare
+	ccPrice, err := getCryptoComparePrice(token, cfg.CryptoCompareAPIKey)
+	if err != nil {
+		fmt.Println("CryptoCompare API error:", err)
+	}
+
+	// Calculate weighted average
+	weightedPrice := (price + cgPrice + ccPrice) / 3
+
+	c.JSON(200, gin.H{
+		"price":               weightedPrice,
+		"binance_price":       price,
+		"coingecko_price":     cgPrice,
+		"cryptocompare_price": ccPrice,
+	})
 }
 
 func handleMemeRequest(c *gin.Context, cfg *envConfig) {
-
 	if cfg.APIKey == "" {
 		c.String(400, "need api key")
+		return
 	}
 
 	if cfg.RPC == "" {
-		panic("Invalid env.json file")
+		c.String(500, "Invalid RPC configuration")
+		return
 	}
 
 	lb, err := getLatestBlock(cfg.RPC)
 	if err != nil {
 		fmt.Println(err)
+		c.String(500, "Error fetching latest block")
 		return
 	}
 
 	meme, err := getMemeOracleData(lb, cfg.APIKey)
 	if err != nil {
 		fmt.Println(err)
+		c.String(500, "Error fetching meme oracle data")
 		return
 	}
 
 	mp, err := getMemePrice(meme.Data.Platform, meme.Data.Address)
 	if err != nil {
 		fmt.Println(err)
+		c.String(500, "Error fetching meme price")
 		return
 	}
 
@@ -106,8 +149,41 @@ func handleMemeRequest(c *gin.Context, cfg *envConfig) {
 	c.String(http.StatusOK, strconv.FormatFloat(random(mpf), 'g', -1, 64))
 }
 
-func getLastKlines(symbol, interval string) (*Kline, error) {
+func handleDeFiRequest(c *gin.Context, cfg *envConfig) {
+	// Example implementation - you should replace this with actual DeFi data fetching and analysis
+	totalValueLocked, err := getTotalValueLocked()
+	if err != nil {
+		c.String(500, "Error fetching DeFi data")
+		return
+	}
 
+	yieldFarmingRate := calculateYieldFarmingRate()
+
+	c.JSON(200, gin.H{
+		"total_value_locked": totalValueLocked,
+		"yield_farming_rate": yieldFarmingRate,
+		"defi_score":         random(100), // Example random DeFi score
+	})
+}
+
+func handleNFTRequest(c *gin.Context, cfg *envConfig) {
+	// Example implementation - you should replace this with actual NFT data fetching and analysis
+	floorPrice, err := getNFTFloorPrice("example_collection")
+	if err != nil {
+		c.String(500, "Error fetching NFT data")
+		return
+	}
+
+	tradingVolume := getNFTTradingVolume()
+
+	c.JSON(200, gin.H{
+		"floor_price":    floorPrice,
+		"trading_volume": tradingVolume,
+		"nft_score":      random(100), // Example random NFT score
+	})
+}
+
+func getLastKlines(symbol, interval string) (*Kline, error) {
 	ur, _ := url.Parse("https://api.binance.com/api/v1/klines")
 	queryParams := url.Values{}
 	queryParams.Add("endTime", strconv.Itoa(int(time.Now().UnixMilli())))
@@ -137,7 +213,7 @@ func getLastKlines(symbol, interval string) (*Kline, error) {
 	}
 
 	if len(ks) == 0 {
-		return nil, err
+		return nil, fmt.Errorf("no klines data")
 	}
 
 	kline := ks[0]
@@ -179,7 +255,38 @@ func multiplyChangeRate(changeRate float64) float64 {
 	return newChangeRate + changeRate
 }
 
-// GetTokenPrice function takes the token address as a string and returns the price as a float64
+func getCoinGeckoPrice(token string, apiKey string) (float64, error) {
+	url := fmt.Sprintf("https://api.coingecko.com/api/v3/simple/price?ids=%s&vs_currencies=usd&x_cg_demo_api_key=%s", token, apiKey)
+	resp, err := http.Get(url)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+
+	var result map[string]map[string]float64
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return 0, err
+	}
+
+	return result[token]["usd"], nil
+}
+
+func getCryptoComparePrice(token string, apiKey string) (float64, error) {
+	url := fmt.Sprintf("https://min-api.cryptocompare.com/data/price?fsym=%s&tsyms=USD&api_key=%s", token, apiKey)
+	resp, err := http.Get(url)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+
+	var result map[string]float64
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return 0, err
+	}
+
+	return result["USD"], nil
+}
+
 func getMemePrice(network, memeAddress string) (string, error) {
 	url := fmt.Sprintf("https://api.geckoterminal.com/api/v2/simple/networks/%s/token_price/%s", network, memeAddress)
 
@@ -253,11 +360,6 @@ func getLatestBlock(rpc string) (string, error) {
 	return response.Result.SyncInfo.LatestBlockHeight, nil
 }
 
-type envConfig struct {
-	RPC    string `json:"rpc"`
-	APIKey string `json:"api_key"`
-}
-
 type memeOracleResponse struct {
 	RequestID string `json:"request_id"`
 	Status    bool   `json:"status"`
@@ -306,4 +408,20 @@ func random(price float64) float64 {
 	priceChange := price * (randomPercent / 100)
 
 	return price + priceChange
+}
+
+// Example functions for DeFi and NFT - replace these with actual implementations
+func getTotalValueLocked() (float64, error) {
+	// Implement actual TVL fetching logic here
+	return 1000000000, nil // Example $1 billion TVL
+}
+
+func calculateYieldFarmingRate() float64 {
+	// Implement actual yield farming rate calculation here
+	return 0.05 // Example 5% APY
+}
+
+func getNFTFloorPrice(collection string) (float64, error) {
+	// Implement actual NFT floor price fetching logic here
+	return 1.5, nil // Example 1.5 ETH floor price
 }
