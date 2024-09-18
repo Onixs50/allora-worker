@@ -1,11 +1,12 @@
 #!/bin/bash
 
-#rpc="https://allora-rpc.testnet.allora.network"
 rpc="https://rpc.ankr.com/allora_testnet"
 
 read -p "Enter your worker index: " index
 read -p "Enter your mnemonic phrase: " mnemonic_phrase
 read -p "Enter your upshot apikey: " upshot_apikey
+read -p "Enter your CoinGecko API key: " coingecko_apikey
+read -p "Enter your CryptoCompare API key: " cryptocompare_apikey
 
 mkdir worker-data-$index 
 chmod -R 777 worker-data-$index
@@ -13,6 +14,8 @@ chmod -R 777 worker-data-$index
 cat << EOF > .env
 RPC=$rpc
 UPSHOT_APIKEY="$upshot_apikey"
+COINGECKO_APIKEY="$coingecko_apikey"
+CRYPTOCOMPARE_APIKEY="$cryptocompare_apikey"
 EOF
 
 
